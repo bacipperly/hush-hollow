@@ -1282,7 +1282,7 @@ function frame(now) {
   // shake grows with the meter: none in the green, a little rattle in the yellow, big shaking in the red
   const shakeTarget = level < QUIET ? 0
     : level < LOUD ? 0.05 + 0.25 * (level - QUIET) / (LOUD - QUIET)
-    : 0.4 + 0.6 * clamp((level - LOUD) / (1 - LOUD), 0, 1);
+    : 0.4 + 0.45 * clamp((level - LOUD) / (1 - LOUD), 0, 1);   // tops out at 0.85
   shake += (shakeTarget - shake) * (1 - Math.exp(-dt * (shakeTarget > shake ? 14 : 4)));
   if (shake < 0.002) shake = 0;
   const amt = shake * (REDUCED_MOTION ? 0.25 : 1);
