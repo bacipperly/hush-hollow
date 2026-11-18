@@ -1246,15 +1246,18 @@ function frame(now) {
   const t = now / 1000;
 
   // loud = earthquake: shake builds fast, settles gently when it gets quieter
-  const shakeTarget = level > LOUD ? 0.35 + 0.65 * clamp((level - LOUD) / (1 - LOUD), 0, 1) : 0;
+  // shake grows with the meter: none in the green, a little rattle in the yellow, big shaking in the red
+  const shakeTarget = level < QUIET ? 0
+    : level < LOUD ? 0.05 + 0.25 * (level - QUIET) / (LOUD - QUIET)
+    : 0.4 + 0.6 * clamp((level - LOUD) / (1 - LOUD), 0, 1);
   shake += (shakeTarget - shake) * (1 - Math.exp(-dt * (shakeTarget > shake ? 14 : 4)));
   if (shake < 0.002) shake = 0;
   const amt = shake * (REDUCED_MOTION ? 0.25 : 1);
   // camera: layered sines read as a wobbly paper quake rather than random jitter
-  const camX = (Math.sin(t * 43) + 0.6 * Math.sin(t * 27.3 + 1.7) + 0.3 * Math.sin(t * 71 + 0.4)) * 7 * amt;
-  const camY = (Math.sin(t * 37 + 2.1) + 0.6 * Math.sin(t * 23.9) + 0.3 * Math.sin(t * 64 + 1.1)) * 5 * amt;
-  const camR = (Math.sin(t * 19 + 0.3) + 0.5 * Math.sin(t * 31)) * 0.008 * amt;
-  const camZ = 1 + 0.065 * amt;   // zoom in a touch so the edges never show
+  const camX = (Math.sin(t * 43) + 0.6 * Math.sin(t * 27.3 + 1.7) + 0.3 * Math.sin(t * 71 + 0.4)) * 10 * amt;
+  const camY = (Math.sin(t * 37 + 2.1) + 0.6 * Math.sin(t * 23.9) + 0.3 * Math.sin(t * 64 + 1.1)) * 7 * amt;
+  const camR = (Math.sin(t * 19 + 0.3) + 0.5 * Math.sin(t * 31)) * 0.012 * amt;
+  const camZ = 1 + 0.1 * amt;    // zoom in a touch so the edges never show
   const camera = () => {
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     if (amt) { ctx.translate(W / 2 + camX, H / 2 + camY); ctx.rotate(camR); ctx.scale(camZ, camZ); ctx.translate(-W / 2, -H / 2); }
