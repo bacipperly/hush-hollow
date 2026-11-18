@@ -22,6 +22,8 @@ A kid-designed microphone game: be quiet and cute woodland animals come into a f
 - `Animal` class — states: enter → play → flee; `fear` builds when loud, drains when quiet.
 - Day/night: `night` flag + `nightT` fade; `DAY`/`NIGHT` palettes feed `buildBackground(pal)`; trees and animals draw on an offscreen `layer` that gets a blue tint at night; `drawStars`/`drawFlies` are live night-only effects. Toggling sends animals that don't fit to `goHome()` (state `leave`), and the roster and count show only the current time's animals.
 - Optional `thumbX`/`thumbBox` on a species fix its roster thumbnail framing.
+- Privacy: a Content-Security-Policy meta tag blocks all network access (`connect-src 'none'`, `img-src data: blob:`); keep everything inline and don't add outside resources or it will be blocked. `stopMic()` stops the tracks; the 🔇/🎤 `micBtn` toggles between mic and the no-mic noise button, and the mic switches off while the tab is hidden.
+- Loud effects: `shake` follows the meter (0 in green, small in yellow, big in red); `camera()` applies it to the canvas, and `setWiggle()` sets `--wig` and `body.loud` for the CSS UI wiggle.
 - `proj(x, z)` — fake-3D ground plane: x 0..1 across, z 0 (far) .. 1 (near).
 
 ## Design intent (from the kid)

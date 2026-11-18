@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Hush Hollow</title>
+<!-- Network lock: the browser blocks this page from sending or loading anything over the network
+     (no fetch, uploads, beacons, sockets, outside scripts or images). The mic level never leaves the computer. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; media-src 'none'; object-src 'none'; worker-src 'none'; manifest-src 'none'; form-action 'none'; base-uri 'none'">
 <style>
   :root { --ink:#3b2a1e; --paper:#fffaf0; --green:#6cc04a; --yellow:#ffcf3d; --red:#ff5a4e; }
   * { box-sizing: border-box; }
@@ -137,6 +140,7 @@
   <button id="nightBtn" class="big">🌙 Make it Night</button>
   <button id="allBtn" class="big">✨ Show All Animals</button>
   <button id="gearBtn" class="small">⚙️ Mic settings</button>
+  <button id="micBtn" class="small">🔇 Turn mic off</button>
   <div id="settings" class="card">
     <label for="sens">Microphone sensitivity</label>
     <input id="sens" type="range" min="0" max="1" step="0.01" value="0.5">
@@ -1075,16 +1079,24 @@ const sensEl = document.getElementById("sens");
 try { const s = localStorage.getItem("hush-sens"); if (s) sensEl.value = s; } catch (e) {}
 sensEl.addEventListener("input", () => { try { localStorage.setItem("hush-sens", sensEl.value); } catch (e) {} });
 
+let micStream = null, audioCtx = null, micPausedForHide = false;
 async function startMic() {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
   const AC = window.AudioContext || window.webkitAudioContext;
   const ac = new AC();
+  micStream = stream; audioCtx = ac;
   if (ac.state === "suspended") await ac.resume();
   const src = ac.createMediaStreamSource(stream);
   analyser = ac.createAnalyser(); analyser.fftSize = 1024;
   buf = new Float32Array(analyser.fftSize);
   src.connect(analyser);
   mode = "mic";
+}
+// Really turn the mic off: stop the tracks so the browser's mic light goes out.
+function stopMic() {
+  if (micStream) micStream.getTracks().forEach(t => t.stop());
+  if (audioCtx) audioCtx.close().catch(() => {});
+  micStream = null; audioCtx = null; analyser = null; buf = null;
 }
 function readLevel() {
   if (SIM) { const seq = params.get("sim").split(",").map(Number); return seq[Math.min(seq.length - 1, Math.floor(performance.now() / 5000))] || 0; }
@@ -1187,12 +1199,33 @@ noiseBtn.addEventListener("contextmenu", e => e.preventDefault());
 window.addEventListener("keydown", e => { if (e.code === "Space" && mode === "button") { noiseHeld = true; e.preventDefault(); } });
 window.addEventListener("keyup", e => { if (e.code === "Space") noiseHeld = false; });
 
+const micBtn = document.getElementById("micBtn");
+function syncMicUI() {
+  const btn = mode === "button";
+  noiseBtn.style.display = btn ? "block" : "none";
+  document.getElementById("gearBtn").style.display = btn ? "none" : "";
+  if (btn) document.getElementById("settings").style.display = "none";
+  micBtn.textContent = btn ? "🎤 Turn mic on" : "🔇 Turn mic off";
+}
+function micOff() { stopMic(); mode = "button"; syncMicUI(); }
+async function micOn() {
+  try { await startMic(); syncMicUI(); }
+  catch (err) { mode = "button"; syncMicUI(); }   // no mic: fall back to the noise button
+}
+micBtn.onclick = () => { micPausedForHide = false; if (mode === "mic") micOff(); else micOn(); };
+// Switch the mic off whenever the game isn't on screen; turn it back on when you return.
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && mode === "mic") { micPausedForHide = true; micOff(); }
+  else if (!document.hidden && micPausedForHide) { micPausedForHide = false; micOn(); }
+});
+window.addEventListener("pagehide", stopMic);
+
 function showGame() {
   document.getElementById("start").style.display = "none";
   document.getElementById("meter").style.display = "block";
   document.getElementById("hud").style.display = "flex";
   document.getElementById("roster").style.display = "flex";
-  if (mode === "button") { noiseBtn.style.display = "block"; document.getElementById("gearBtn").style.display = "none"; }
+  syncMicUI();
 }
 document.getElementById("startBtn").onclick = async () => {
   try { await startMic(); showGame(); }
