@@ -47,7 +47,14 @@
   #roster canvas.seen { background:#fff2c6; }
 
   /* No-mic noise button */
-  #noiseBtn { position:fixed; left:16px; bottom:90px; width:96px; height:96px; border-radius:50%; font-size:16px; display:none; line-height:1.1; }
+  #noiseBtn { position:fixed; left:16px; bottom:90px; width:104px; height:104px; border-radius:50%; font-size:15px; display:none; line-height:1.1;
+    touch-action:none; user-select:none; -webkit-user-select:none; --hold:0; --ring:var(--green); }
+  /* the ring fills up the longer you hold: green = whisper, yellow = talking, red = loud */
+  #noiseBtn::before { content:""; position:absolute; inset:-9px; border-radius:50%; pointer-events:none;
+    background:conic-gradient(var(--ring) calc(var(--hold) * 360deg), rgba(255,255,255,.55) 0);
+    -webkit-mask:radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px));
+            mask:radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px)); }
+  #noiseBtn .nb-icon { font-size:26px; display:block; }
 
   /* Too loud: UI gets rattled. --wig (0..1) is set from the script and scales every motion,
      so the wiggle grows with the noise and fades out smoothly as it gets quieter. */
@@ -138,7 +145,7 @@
 </div>
 
 <div id="roster" class="card"></div>
-<button id="noiseBtn" class="big">🔊<br>Hold to<br>be loud</button>
+<button id="noiseBtn" class="big"><span class="nb-icon">🔊</span><span class="nb-text">Hold to<br>make noise</span></button>
 
 <div id="start">
   <div id="startCard" class="card">
@@ -1059,6 +1066,11 @@ function spawnOne(magic) {
 // ---------------------------------------------------------------- audio
 let analyser = null, buf = null, mode = "none"; // "mic" | "button"
 let level = 0, peak = 0, noiseHeld = false;
+// No-mic button: the longer you hold, the louder it gets (whisper → talking → loud).
+// Let go and it settles back down, so short taps stay quiet-ish and long holds get LOUD.
+const HOLD_RISE = 0.27;   // noise added per second while held (~0.8s to leave quiet, ~2.1s to get loud)
+const HOLD_FALL = 0.9;    // noise lost per second after letting go
+let btnNoise = 0, btnLast = performance.now();
 const sensEl = document.getElementById("sens");
 try { const s = localStorage.getItem("hush-sens"); if (s) sensEl.value = s; } catch (e) {}
 sensEl.addEventListener("input", () => { try { localStorage.setItem("hush-sens", sensEl.value); } catch (e) {} });
@@ -1076,7 +1088,12 @@ async function startMic() {
 }
 function readLevel() {
   if (SIM) { const seq = params.get("sim").split(",").map(Number); return seq[Math.min(seq.length - 1, Math.floor(performance.now() / 5000))] || 0; }
-  if (mode === "button") return noiseHeld ? 0.85 + Math.random() * 0.1 : 0.05 + Math.random() * 0.04;
+  if (mode === "button") {
+    const now = performance.now(), dt = Math.min(0.1, (now - btnLast) / 1000); btnLast = now;
+    btnNoise = clamp(btnNoise + (noiseHeld ? HOLD_RISE : -HOLD_FALL) * dt, 0, 1);
+    const v = 0.06 + btnNoise * 0.94;
+    return clamp(v + (Math.random() - 0.5) * (0.03 + 0.05 * btnNoise), 0, 1);
+  }
   if (!analyser) return 0;
   analyser.getFloatTimeDomainData(buf);
   let sum = 0; for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
@@ -1147,9 +1164,26 @@ SPECIES.forEach(makeThumb); updateRoster();
 
 // no-mic button
 const noiseBtn = document.getElementById("noiseBtn");
-const setNoise = v => e => { e.preventDefault(); noiseHeld = v; };
+const setNoise = v => e => { e.preventDefault(); noiseHeld = v; if (v && e.pointerId != null) try { noiseBtn.setPointerCapture(e.pointerId); } catch (_) {} };
+const nbIcon = noiseBtn.querySelector(".nb-icon"), nbText = noiseBtn.querySelector(".nb-text");
+let nbStage = "";
+function updateNoiseBtn() {
+  const v = 0.06 + btnNoise * 0.94;
+  const stage = !noiseHeld && btnNoise < 0.02 ? "idle" : v < QUIET ? "whisper" : v < LOUD ? "talk" : "loud";
+  noiseBtn.style.setProperty("--hold", btnNoise.toFixed(3));
+  if (stage === nbStage) return;
+  nbStage = stage;
+  const [icon, text, ring] = {
+    idle:    ["🔊", "Hold to<br>make noise", "var(--green)"],
+    whisper: ["🤫", "whisper…",            "var(--green)"],
+    talk:    ["🗣️", "talking",              "var(--yellow)"],
+    loud:    ["📣", "LOUD!",                "var(--red)"],
+  }[stage];
+  nbIcon.textContent = icon; nbText.innerHTML = text; noiseBtn.style.setProperty("--ring", ring);
+}
 noiseBtn.addEventListener("pointerdown", setNoise(true));
-["pointerup", "pointerleave", "pointercancel"].forEach(ev => noiseBtn.addEventListener(ev, setNoise(false)));
+["pointerup", "pointercancel", "lostpointercapture"].forEach(ev => noiseBtn.addEventListener(ev, setNoise(false)));
+noiseBtn.addEventListener("contextmenu", e => e.preventDefault());
 window.addEventListener("keydown", e => { if (e.code === "Space" && mode === "button") { noiseHeld = true; e.preventDefault(); } });
 window.addEventListener("keyup", e => { if (e.code === "Space") noiseHeld = false; });
 
@@ -1188,6 +1222,7 @@ function frame(now) {
 
   // level smoothing: rise fast, fall slowly
   const raw = started ? readLevel() : 0.05;
+  if (mode === "button") updateNoiseBtn();
   level += (raw - level) * (1 - Math.exp(-dt * (raw > level ? 18 : 2.5)));
   peak = Math.max(level, peak - dt * 0.35);
 
